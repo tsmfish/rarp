@@ -61,7 +61,7 @@ int main() {
         close(fd);
         return 1;
     }
-    timeout.tv_sec = 5;
+    timeout.tv_sec = 20;
     timeout.tv_usec = 0;
     if (ioctl(fd, BIOCSRTIMEOUT, &timeout) < 0) {
         perror("ioctl(BIOCSRTIMEOUT)");
