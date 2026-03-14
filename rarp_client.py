@@ -59,11 +59,10 @@ def main() -> None:
     # Sniff тільки RARP-пакети
     start_time = time.time()
     ans = sniff(iface=iface,
-                filter="ether proto 0x8035",   # тільки RARP (0x8035)
                 timeout=timeout_sec,
-                stop_filter=is_our_rarp_reply,
-                count=1,
-                store=1)
+                prn=is_our_rarp_reply,
+                store=0,
+                verbose=1)
 
     if ans:
         reply = ans[0]

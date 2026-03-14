@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+
+""" dependencises: apt install libpcap-dev """
+
+import sys
+from scapy.all import *
+import argparse
+import sys
+import time
+import subprocess
+import os
+
+# ====================== ROOT PRIVILEGE CHECK ======================
+# if os.geteuid() != 0:
+#     print("❌ ERROR: Please run the script with root privileges (sudo python3 rarp.py)")
+#     sys.exit(1)
+
+# ====================== CONSTANTS ======================
+zero_ip = "0.0.0.0"
+dst_mac = "ff:ff:ff:ff:ff:ff"
+
+# ====================== ARGUMENT PARSER ======================
+parser = argparse.ArgumentParser(description="RARP Client for Ubuntu 24.04 — receives IP and automatically applies it to the interface")
+parser.add_argument('-m', '--mac',     type=str, help='MAC address (if not specified — taken from the interface)')
+parser.add_argument('-i', '--iface',   type=str, help='Interface name (enp0s3, eth0, etc.). If not specified — auto')
+parser.add_argument('-t', '--timeout', type=int, default=60, help='Response timeout in seconds')
+parser.add_argument('-s', '--set-ip',  action='store_true', help='Automatically set the received IP on the interface')
+parser.add_argument('--int-interactive', action='store_true', help='Інтерактивний вибір інтерфейсу: виводить список і чекає вводу номеру')
+# ====================== Global variables ======================
+global args, iface, mac
+args = parser.parse_args()
+# ====================== INTERFACE & MAC SELECTION ======================
+# Вибір інтерфейсу
+if args.int_interactive:
+    print("Доступні інтерфейси:")
+    ifaces_list = list(conf.ifaces.values())
+    for i, iface_obj in enumerate(ifaces_list):
+        print(f"{i}: {iface_obj.description} ({iface_obj.name})")
+    
+    try:
+        num = int(input("Введіть номер інтерфейсу: "))
+        if 0 <= num < len(ifaces_list):
+            iface = ifaces_list[num].description  # Використовуємо дружнє ім'я (працює на Windows)
+            print(f"✅ Обрано інтерфейс: {iface}")
+        else:
+            print("❌ Невірний номер. Вихід.")
+            sys.exit(1)
+    except ValueError:
+        print("❌ Невірний ввід. Вихід.")
+        sys.exit(1)
+elif args.all:
+    iface = None
+    print("⚠️  Режим: ВСІ інтерфейси")
+else:
+    if args.interface:
+        iface = args.interface
+    else:
+        iface = get_working_if()
+    print(f"✅ Прослуховування інтерфейсу: {iface}")
+if args.mac:
+    mac = args.mac.lower()
+    print(f"✅ Using specified MAC: {mac}")
+else:
+    mac = get_if_hwaddr(iface).lower()
+    print(f"✅ MAC taken from interface: {mac}")
+
+# ====================== BUILDING & SENDING RARP REQUEST ======================
+pkt = Ether(dst=dst_mac, 
+            src=mac, 
+            type=0x8035) / \
+      ARP(op=3, 
+        hwsrc=mac, 
+        psrc=zero_ip, 
+        hwdst=dst_mac, 
+        pdst=zero_ip)
+
+print("\n=== RARP Request ===")
+pkt.show()
+
+# ====================== WAITING FOR REPLY ======================
+print(f"\n⏳ Waiting for RARP Reply for {args.timeout} seconds...")
+
+def check_packet(pkt):
+    global args, iface, sniffer
+    # if Ether not in pkt or pkt[Ether].type != 0x8035 or Raw not in pkt:
+    if Ether not in pkt or pkt[Ether].type != 0x8035:
+        return
+
+    print(f'packet: {pkt}, type: {pkt[Ether].type}')
+
+
+    payload = pkt[Raw].load
+
+    if len(payload) < 14:  # Мінімальна довжина для витягування MAC
+        return
+
+    # Витягуємо Opcode (2 байти, big-endian)
+    opcode = int.from_bytes(payload[6:8], byteorder='big')
+
+    if opcode != 4:  # Тільки RARP Request
+        return
+
+    # Витягуємо MAC клієнта і форматуємо в рядок aa:bb:cc...
+    client_mac_raw = payload[8:14]
+    client_mac = ':'.join(f'{b:02x}' for b in client_mac_raw)
+
+    client_ip_raw = payload[14:18]
+    client_ip = '.'.join(f'{b}' for b in client_ip_raw)
+
+    print(f"\n🎉 Received RARP Reply, MAC: {client_mac}, IP: {client_ip}")
+
+    # ====================== AUTO APPLY IP TO INTERFACE ======================
+    if args.set_ip:
+        print(f"\n⚡ Applying IP {client_ip}/24 to interface {iface}...")
+
+        try:
+            # Flush old address
+            subprocess.run(["ip", "addr", "flush", "dev", iface], check=False, stdout=subprocess.DEVNULL)
+            
+            # Add new address
+            subprocess.run(["ip", "addr", "add", f"{client_ip}/24", "dev", iface], check=True)
+            
+            # Bring interface up
+            subprocess.run(["ip", "link", "set", iface, "up"], check=True)
+            
+            print(f"✅ IP {client_ip} successfully set on {iface}!")
+            print("   Check with: ip addr show " + iface)
+            
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Error applying IP: {e}")
+            print("   Make sure the interface exists and you have root privileges.")
+
+    sys.exit(0)
+    return
+
+try:
+    global sniffer
+    sniffer = AsyncSniffer(
+            iface=iface,
+            prn=check_packet, 
+            store=False
+        )
+
+    sniffer.start()
+
+    print(f"\nSending RARP Request...")
+    sendp(pkt, iface=iface, count=1, verbose=1)
+    print("✅ RARP Request sent!")
+
+    time.sleep(args.timeout if args.timeout else 60)
+    sniffer.stop()
+    
+except KeyboardInterrupt:
+    print("\n\n🛑 RARP-сервер зупинено користувачем.")
+except Exception as e:
+    print(f"\n❌ Помилка: {e}")
+
+print("\nDone!")
