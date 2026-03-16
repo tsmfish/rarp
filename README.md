@@ -146,3 +146,4 @@ eth.type == 0x8035
 | pdst | `0.0.0.0` | `0.0.0.0` |
 
 > Специфікація: [RFC 903](https://www.rfc-editor.org/rfc/rfc903)
+> Опис [Опис](.\ReverseAddressResolutionProtocol.md)

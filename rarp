@@ -22,7 +22,7 @@ dst_mac = "ff:ff:ff:ff:ff:ff"
 # ====================== ARGUMENT PARSER ======================
 parser = argparse.ArgumentParser(description="RARP Client for Ubuntu 24.04 — receives IP and automatically applies it to the interface")
 parser.add_argument('-m', '--mac',     type=str, help='MAC address (if not specified — taken from the interface)')
-parser.add_argument('-i', '--iface',   type=str, help='Interface name (enp0s3, eth0, etc.). If not specified — auto')
+parser.add_argument('-i', '--interface',   type=str, help='Interface name (enp0s3, eth0, etc.). If not specified — auto')
 parser.add_argument('-t', '--timeout', type=int, default=60, help='Response timeout in seconds')
 parser.add_argument('-s', '--set-ip',  action='store_true', help='Automatically set the received IP on the interface')
 parser.add_argument('--int-interactive', action='store_true', help='Інтерактивний вибір інтерфейсу: виводить список і чекає вводу номеру')
@@ -48,9 +48,6 @@ if args.int_interactive:
     except ValueError:
         print("❌ Невірний ввід. Вихід.")
         sys.exit(1)
-elif args.all:
-    iface = None
-    print("⚠️  Режим: ВСІ інтерфейси")
 else:
     if args.interface:
         iface = args.interface
